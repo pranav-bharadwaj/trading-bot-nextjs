@@ -30,7 +30,10 @@ interface OptionsLeg {
   strike: number;
   type: string;
   premium: number;
-  greeks: { delta: number; theta: number; vega: number };
+  delta?: number;
+  theta?: number;
+  vega?: number;
+  gamma?: number;
 }
 
 interface OptionsStrategy {
@@ -236,13 +239,13 @@ function OptionsSection({ data }: { data: OptionsData }) {
                       <td className="py-1.5 pr-3 text-gray-400">{leg.type}</td>
                       <td className="py-1.5 pr-3 text-right tabular-nums text-white">₹{leg.premium?.toFixed(2)}</td>
                       <td className="py-1.5 pr-3 text-right tabular-nums text-accent-blue">
-                        {leg.greeks?.delta?.toFixed(2)}
+                        {leg.delta?.toFixed(2)}
                       </td>
                       <td className="py-1.5 pr-3 text-right tabular-nums text-accent-purple">
-                        {leg.greeks?.theta?.toFixed(2)}
+                        {leg.theta?.toFixed(2)}
                       </td>
                       <td className="py-1.5 text-right tabular-nums text-accent-gold">
-                        {leg.greeks?.vega?.toFixed(2)}
+                        {leg.vega?.toFixed(2)}
                       </td>
                     </tr>
                   ))}
@@ -265,7 +268,7 @@ function OptionsSection({ data }: { data: OptionsData }) {
                 <div className="text-[10px] text-gray-500 mb-1">Stop Loss</div>
                 <div className="text-sm font-bold text-accent-red">₹{strat.premium_sl?.toFixed(2)}</div>
                 <div className="text-[10px] text-accent-red">
-                  -{((1 - strat.premium_sl / strat.net_premium) * 100).toFixed(0)}%
+                  -{strat.net_premium ? ((1 - (strat.premium_sl ?? 0) / strat.net_premium) * 100).toFixed(0) : 0}%
                 </div>
               </div>
               <div className="bg-dark-700/50 rounded-lg p-2.5 text-center">
@@ -484,11 +487,10 @@ function StockDetailModal({
                           ? ((prediction as Record<string, unknown>).models as Record<string, unknown>)?.monte_carlo as Record<string, unknown> | undefined
                           : (prediction as Record<string, unknown>).monte_carlo as Record<string, unknown> | undefined;
                         if (!mc) return null;
-                        const predictions = mc.predictions as Record<string, Record<string, number>> | undefined;
-                        const scenarios = mc.scenarios as Record<string, Record<string, number>> | undefined;
+                        const predictions = mc.predictions as Record<string, unknown> | undefined;
+                        const scenarios = mc.scenarios as Record<string, Record<string, unknown>> | undefined;
                         const riskMetrics = mc.risk_metrics as Record<string, number> | undefined;
-                        const probs = mc.probabilities as Record<string, number> | undefined;
-                        const day5 = predictions?.day_5;
+                        const targetProbs = mc.target_probabilities as Record<string, number> | undefined;
                         return (
                           <div className="glass-card p-4 space-y-3">
                             <h4 className="text-xs font-semibold text-accent-blue flex items-center gap-1.5">
@@ -497,7 +499,7 @@ function StockDetailModal({
                             <div>
                               <div className="text-[10px] text-gray-500 mb-0.5">Mean Price</div>
                               <div className="text-lg font-bold">
-                                {day5?.mean != null ? `₹${formatNumber(day5.mean)}` : '—'}
+                                {predictions?.mean != null ? `₹${formatNumber(predictions.mean as number)}` : '—'}
                               </div>
                             </div>
                             {/* Scenarios */}
@@ -511,7 +513,7 @@ function StockDetailModal({
                                     <div key={s} className="bg-dark-700/50 rounded-lg p-2">
                                       <div className="text-[10px] text-gray-500 capitalize">{s}</div>
                                       <div className={`text-xs font-bold ${color}`}>
-                                        ₹{formatNumber(sc.target ?? sc.price ?? 0)}
+                                        ₹{formatNumber((sc.avg_price as number) ?? 0)}
                                       </div>
                                     </div>
                                   );
@@ -521,21 +523,18 @@ function StockDetailModal({
                             {/* Risk Metrics */}
                             {riskMetrics && (
                               <div className="text-[10px] text-gray-500 space-y-0.5">
-                                {riskMetrics.var_95 != null && <div>VaR 95%: ₹{formatNumber(riskMetrics.var_95)}</div>}
+                                {riskMetrics.var_95 != null && <div>VaR 95%: {riskMetrics.var_95.toFixed(1)}%</div>}
                                 {riskMetrics.max_drawdown != null && (
-                                  <div>Max Drawdown: {(riskMetrics.max_drawdown * 100).toFixed(1)}%</div>
+                                  <div>Max Drawdown: {riskMetrics.max_drawdown.toFixed(1)}%</div>
                                 )}
                               </div>
                             )}
-                            {/* Probabilities */}
-                            {probs && (
-                              <div className="flex gap-3 text-[10px]">
-                                {probs.up != null && (
-                                  <span className="text-accent-green">↑ {(probs.up * 100).toFixed(0)}%</span>
-                                )}
-                                {probs.down != null && (
-                                  <span className="text-accent-red">↓ {(probs.down * 100).toFixed(0)}%</span>
-                                )}
+                            {/* Target Probabilities */}
+                            {targetProbs && (
+                              <div className="flex flex-wrap gap-2 text-[10px]">
+                                {Object.entries(targetProbs).map(([k, v]) => (
+                                  <span key={k} className="text-accent-blue">{k}: {v.toFixed(1)}%</span>
+                                ))}
                               </div>
                             )}
                           </div>
@@ -556,12 +555,12 @@ function StockDetailModal({
                             </h4>
                             <div>
                               <div className="text-[10px] text-gray-500 mb-0.5">Fair Value</div>
-                              <div className="text-lg font-bold">₹{formatNumber(fvp.fair_value as number)}</div>
+                              <div className="text-lg font-bold">₹{formatNumber((fvp?.fair_value as number) ?? 0)}</div>
                             </div>
                             <div className="flex items-center gap-2 text-xs">
-                              <span className={getSignalColor(fvp.signal as string)}>{fvp.signal as string}</span>
+                              <span className={getSignalColor((fvp?.signal as string) ?? '')}>{(fvp?.signal as string) ?? ''}</span>
                               <span className="text-gray-500">•</span>
-                              <span className="text-gray-400">{fvp.premium_discount as string ?? ''}</span>
+                              <span className="text-gray-400">{fvp?.premium_discount_pct != null ? `${(fvp.premium_discount_pct as number).toFixed(2)}%` : ''}</span>
                             </div>
                             {/* Components */}
                             {components && (
@@ -596,20 +595,20 @@ function StockDetailModal({
                               🧠 AMD Model
                             </h4>
                             <div>
-                              <div className="text-[10px] text-gray-500 mb-0.5">Target</div>
+                              <div className="text-[10px] text-gray-500 mb-0.5">5D Projection</div>
                               <div className="text-lg font-bold">
-                                {projection?.target != null ? `₹${formatNumber(projection.target)}` : '—'}
+                                {projection?.price_5d != null ? `₹${formatNumber(projection.price_5d)}` : '—'}
                               </div>
                             </div>
                             <div className="space-y-1 text-xs">
                               <div className="flex items-center gap-2">
                                 <span className="text-gray-500">Regime:</span>
-                                <span className="text-white">{amd.regime as string}</span>
+                                <span className="text-white">{(amd.regime as string) ?? ''}</span>
                               </div>
-                              {amd.hurst != null && (
+                              {amd.hurst_exponent != null && (
                                 <div className="flex items-center gap-2">
                                   <span className="text-gray-500">Hurst:</span>
-                                  <span className="text-white">{(amd.hurst as number).toFixed(3)}</span>
+                                  <span className="text-white">{(amd.hurst_exponent as number).toFixed(3)}</span>
                                   {typeof amd.hurst_interpretation === 'string' && (
                                     <span className="text-gray-400 text-[10px]">({amd.hurst_interpretation})</span>
                                   )}
@@ -632,23 +631,17 @@ function StockDetailModal({
                             </div>
                             {/* Projection details */}
                             {projection && (
-                              <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
-                                {projection.upper != null && (
+                              <div className="grid grid-cols-2 gap-2 text-center text-[10px]">
+                                {projection.price_5d != null && (
                                   <div className="bg-dark-700/50 rounded p-1.5">
-                                    <div className="text-gray-500">Upper</div>
-                                    <div className="text-accent-green font-bold">₹{formatNumber(projection.upper)}</div>
+                                    <div className="text-gray-500">5-Day</div>
+                                    <div className="text-accent-blue font-bold">₹{formatNumber(projection.price_5d)}</div>
                                   </div>
                                 )}
-                                {projection.target != null && (
+                                {projection.price_10d != null && (
                                   <div className="bg-dark-700/50 rounded p-1.5">
-                                    <div className="text-gray-500">Target</div>
-                                    <div className="text-accent-blue font-bold">₹{formatNumber(projection.target)}</div>
-                                  </div>
-                                )}
-                                {projection.lower != null && (
-                                  <div className="bg-dark-700/50 rounded p-1.5">
-                                    <div className="text-gray-500">Lower</div>
-                                    <div className="text-accent-red font-bold">₹{formatNumber(projection.lower)}</div>
+                                    <div className="text-gray-500">10-Day</div>
+                                    <div className="text-accent-purple font-bold">₹{formatNumber(projection.price_10d)}</div>
                                   </div>
                                 )}
                               </div>

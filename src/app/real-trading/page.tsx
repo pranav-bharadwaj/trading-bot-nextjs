@@ -51,12 +51,15 @@ interface SafetyInfo {
 }
 
 interface BotStatus {
-  running: boolean; mode: string; authenticated: boolean;
+  running: boolean; mode: string; paper_mode: boolean; authenticated: boolean;
   open_positions: Position[]; daily_pnl: number; total_pnl: number;
   today_pnl: number; wins: number; losses: number; win_rate: number;
   consecutive_losses: number; today_trades: number;
   closed_trades: ClosedTrade[]; log: LogEntry[];
   config: BotConfig; safety: SafetyInfo;
+  open_count: number; capital_deployed: number;
+  is_trading_hours: boolean; kill_switch: boolean;
+  paused_until: number; recent_log: LogEntry[];
 }
 
 interface UpstoxStatus {
@@ -122,7 +125,7 @@ const cardItem = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }
 
 function GlassCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <motion.div variants={cardItem} className={`bg-dark-700/60 backdrop-blur border border-white/5 rounded-xl p-5 ${className}`}>
+    <motion.div variants={cardItem} className={`bg-dark-700/60 backdrop-blur border border-white/5 rounded-xl p-3 sm:p-5 ${className}`}>
       {children}
     </motion.div>
   );
@@ -228,7 +231,7 @@ export default function RealTradingPage() {
   const [setupOpen, setSetupOpen] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
-  const [redirectUri, setRedirectUri] = useState('https://pranavbharadwaj.pythonanywhere.com/api/upstox/callback');
+  const [redirectUri, setRedirectUri] = useState(`${API_BASE}/api/upstox/callback`);
   const [authCode, setAuthCode] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -241,7 +244,7 @@ export default function RealTradingPage() {
   const logRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  const isLive = botStatus?.mode === 'live';
+  const isLive = (botStatus && botStatus.paper_mode === false) || upstoxStatus?.mode === 'live';
   const isAuth = botStatus?.authenticated || upstoxStatus?.authenticated || false;
   const isRunning = botStatus?.running || false;
   const modeAccent = isLive ? 'accent-red' : 'accent-gold';
@@ -440,11 +443,13 @@ export default function RealTradingPage() {
 
   async function handleModeSwitch(newMode: string) {
     if (newMode === 'live') { setLiveModeModal(true); return; }
+    setBotStatus((prev: BotStatus | null) => prev ? { ...prev, paper_mode: true } : prev);
     await postAction('/api/upstox/bot/mode', { mode: newMode }, 'mode');
   }
 
   async function confirmLiveMode() {
     setLiveModeModal(false);
+    setBotStatus((prev: BotStatus | null) => prev ? { ...prev, paper_mode: false } : prev);
     await postAction('/api/upstox/bot/mode', { mode: 'live' }, 'mode');
   }
 
@@ -644,7 +649,7 @@ export default function RealTradingPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
 
       {/* ─── Toast ─── */}
       <AnimatePresence>
@@ -662,12 +667,12 @@ export default function RealTradingPage() {
       <ConfirmModal open={closeTradeId !== null} title="Close Position" message={`Close trade #${closeTradeId}?`} onConfirm={() => closeTradeId !== null && handleCloseTrade(closeTradeId)} onCancel={() => setCloseTradeId(null)} confirmLabel="Close" danger />
 
       {/* ════════════ 1. HEADER BAR ════════════ */}
-      <motion.div {...fadeIn} className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-              ⚡ Upstox Real Trading
-              <span className={`ml-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${
+      <motion.div {...fadeIn} className="flex flex-col gap-3 sm:gap-4">
+        <div className="flex items-start sm:items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl md:text-3xl font-bold flex items-center gap-2 flex-wrap">
+              <span className="whitespace-nowrap">⚡ Upstox Trading</span>
+              <span className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider border ${
                 isLive
                   ? 'bg-accent-red/20 text-accent-red border-accent-red/40 animate-pulse'
                   : 'bg-accent-gold/20 text-accent-gold border-accent-gold/40'
@@ -675,55 +680,55 @@ export default function RealTradingPage() {
                 {isLive ? '🔴 LIVE' : '📝 PAPER'}
               </span>
             </h1>
-            {/* Connection quality indicator */}
-            <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs">
-              <span className={`flex items-center gap-1.5 ${sseConnected ? 'text-accent-green' : 'text-accent-red'}`}>
-                <span className={`inline-block w-2 h-2 rounded-full ${sseConnected ? 'bg-accent-green animate-pulse' : 'bg-accent-red'}`} />
-                {sseConnected ? 'Live Stream' : 'Reconnecting...'}
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1 text-[10px] sm:text-xs">
+              <span className={`flex items-center gap-1 ${sseConnected ? 'text-accent-green' : 'text-accent-red'}`}>
+                <span className={`inline-block w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${sseConnected ? 'bg-accent-green animate-pulse' : 'bg-accent-red'}`} />
+                {sseConnected ? 'Live' : 'Offline'}
               </span>
               <span className="text-gray-600">|</span>
-              <span className={`flex items-center gap-1.5 ${isAuth ? 'text-accent-green' : 'text-accent-red'}`}>
-                <span className={`inline-block w-2 h-2 rounded-full ${isAuth ? 'bg-accent-green' : 'bg-accent-red'}`} />
-                {isAuth ? 'Upstox Connected' : 'Upstox Disconnected'}
+              <span className={`flex items-center gap-1 ${isAuth ? 'text-accent-green' : 'text-accent-red'}`}>
+                {isAuth ? '✓ Upstox' : '✕ Upstox'}
               </span>
-              <span className="text-gray-600">|</span>
-              <span className="text-gray-400">📡 Last update: {timeSinceUpdate}</span>
+              <span className="text-gray-600 hidden sm:inline">|</span>
+              <span className="text-gray-400 hidden sm:inline">📡 {timeSinceUpdate}</span>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Connection status */}
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <div className={`flex items-center gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-medium border ${
             isAuth ? 'bg-accent-green/10 border-accent-green/30 text-accent-green' : 'bg-accent-red/10 border-accent-red/30 text-accent-red'
           }`}>
-            <span className={`w-2 h-2 rounded-full ${isAuth ? 'bg-accent-green animate-pulse' : 'bg-accent-red'}`} />
-            {isAuth ? '🟢 Connected' : '🔴 Not Connected'}
+            <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${isAuth ? 'bg-accent-green animate-pulse' : 'bg-accent-red'}`} />
+            <span className="hidden sm:inline">{isAuth ? '🟢 Connected' : '🔴 Not Connected'}</span>
+            <span className="sm:hidden">{isAuth ? 'OK' : 'Off'}</span>
           </div>
 
           <button onClick={handleLogin} disabled={actionLoading === 'login'}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-accent-blue/20 text-accent-blue hover:bg-accent-blue/30 border border-accent-blue/30 transition-all disabled:opacity-50">
-            {actionLoading === 'login' ? '...' : '🔗 Login to Upstox'}
+            className="px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium bg-accent-blue/20 text-accent-blue hover:bg-accent-blue/30 border border-accent-blue/30 transition-all disabled:opacity-50">
+            <span className="hidden sm:inline">{actionLoading === 'login' ? '...' : '🔗 Login to Upstox'}</span>
+            <span className="sm:hidden">{actionLoading === 'login' ? '...' : '🔗 Login'}</span>
           </button>
 
           <button onClick={handleStartStop}
             disabled={actionLoading === 'start' || actionLoading === 'stop'}
-            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all disabled:opacity-50 ${
+            className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium border transition-all disabled:opacity-50 ${
               isRunning
                 ? 'bg-accent-red/20 text-accent-red hover:bg-accent-red/30 border-accent-red/30'
                 : 'bg-accent-green/20 text-accent-green hover:bg-accent-green/30 border-accent-green/30'
             }`}>
-            {isRunning ? '🛑 Stop Bot' : '▶️ Start Bot'}
+            {isRunning ? '🛑 Stop' : '▶️ Start'}
           </button>
 
           <button onClick={() => setCloseAllModal(true)} disabled={positions.length === 0}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-accent-red/10 text-accent-red hover:bg-accent-red/20 border border-accent-red/20 transition-all disabled:opacity-30">
-            🛑 Close All
+            className="px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium bg-accent-red/10 text-accent-red hover:bg-accent-red/20 border border-accent-red/20 transition-all disabled:opacity-30">
+            <span className="hidden sm:inline">🛑 Close All</span>
+            <span className="sm:hidden">✕ All</span>
           </button>
 
           <button onClick={refreshAll}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-accent-gold/10 text-accent-gold hover:bg-accent-gold/20 border border-accent-gold/20 transition-all">
-            🔄 Refresh
+            className="px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium bg-accent-gold/10 text-accent-gold hover:bg-accent-gold/20 border border-accent-gold/20 transition-all">
+            🔄
           </button>
         </div>
       </motion.div>
@@ -815,20 +820,20 @@ export default function RealTradingPage() {
       </motion.div>
 
       {/* ════════════ 3. MODE TOGGLE ════════════ */}
-      <motion.div {...fadeIn} className={`glass-card p-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-2 ${isLive ? 'border-accent-red/30' : 'border-accent-gold/30'}`}>
-        <div className="flex items-center gap-3">
-          <span className="text-lg font-bold">Trading Mode:</span>
-          <span className={`text-2xl font-black ${isLive ? 'text-accent-red' : 'text-accent-gold'}`}>
+      <motion.div {...fadeIn} className={`glass-card p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 border-2 ${isLive ? 'border-accent-red/30' : 'border-accent-gold/30'}`}>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <span className="text-sm sm:text-lg font-bold">Mode:</span>
+          <span className={`text-lg sm:text-2xl font-black ${isLive ? 'text-accent-red' : 'text-accent-gold'}`}>
             {isLive ? '🔴 LIVE' : '📝 PAPER'}
           </span>
         </div>
-        <div className="flex items-center gap-3 bg-dark-900 rounded-xl p-1">
+        <div className="flex items-center gap-2 sm:gap-3 bg-dark-900 rounded-xl p-1">
           <button onClick={() => handleModeSwitch('paper')}
-            className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${!isLive ? 'bg-accent-gold/20 text-accent-gold border border-accent-gold/30' : 'text-gray-500 hover:text-gray-300'}`}>
+            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${!isLive ? 'bg-accent-gold/20 text-accent-gold border border-accent-gold/30' : 'text-gray-500 hover:text-gray-300'}`}>
             📝 Paper
           </button>
           <button onClick={() => handleModeSwitch('live')}
-            className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${isLive ? 'bg-accent-red/20 text-accent-red border border-accent-red/30 animate-pulse' : 'text-gray-500 hover:text-gray-300'}`}>
+            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${isLive ? 'bg-accent-red/20 text-accent-red border border-accent-red/30 animate-pulse' : 'text-gray-500 hover:text-gray-300'}`}>
             🔴 Live
           </button>
         </div>
@@ -837,18 +842,18 @@ export default function RealTradingPage() {
       {/* ════════════ 4. SAFETY DASHBOARD ════════════ */}
       {config && (
         <motion.div variants={stagger} initial="initial" animate="animate">
-          <h2 className="text-lg font-bold mb-3 flex items-center gap-2">🔒 Safety Dashboard</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <h2 className="text-sm sm:text-lg font-bold mb-3 flex items-center gap-2">🔒 Safety Dashboard</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
             {safetyCards.map(card => (
               <GlassCard key={card.key} className="relative group">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-lg">{card.icon}</span>
+                <div className="flex items-center justify-between mb-1 sm:mb-2">
+                  <span className="text-base sm:text-lg">{card.icon}</span>
                   {!card.noEdit && editingSafety !== card.key && (
                     <button onClick={() => { setEditingSafety(card.key); setEditValue(String(card.value)); }}
                       className="text-xs text-gray-500 hover:text-accent-blue opacity-0 group-hover:opacity-100 transition-opacity">✏️</button>
                   )}
                 </div>
-                <p className="text-xs text-gray-400 mb-1">{card.label}</p>
+                <p className="text-[10px] sm:text-xs text-gray-400 mb-0.5 sm:mb-1 truncate">{card.label}</p>
                 {editingSafety === card.key ? (
                   <div className="flex gap-1 mt-1">
                     <input value={editValue} onChange={e => setEditValue(e.target.value)} autoFocus
@@ -857,9 +862,9 @@ export default function RealTradingPage() {
                     <button onClick={() => setEditingSafety(null)} className="text-accent-red text-xs px-1">✕</button>
                   </div>
                 ) : (
-                  <p className="text-xl font-bold text-white">{card.display}</p>
+                  <p className="text-base sm:text-xl font-bold text-white truncate">{card.display}</p>
                 )}
-                <p className="text-xs text-gray-500 mt-1">{card.sub}</p>
+                <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1 truncate">{card.sub}</p>
                 {card.bar !== undefined && (
                   <div className="mt-2 h-1.5 rounded-full bg-dark-900 overflow-hidden">
                     <div className={`h-full rounded-full transition-all ${card.bar > 0.8 ? 'bg-accent-red' : card.bar > 0.5 ? 'bg-accent-gold' : 'bg-accent-green'}`}
@@ -874,7 +879,7 @@ export default function RealTradingPage() {
 
       {/* ════════════ 5. PORTFOLIO SUMMARY ════════════ */}
       <motion.div variants={stagger} initial="initial" animate="animate">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           {[
             { label: 'Total P&L', value: botStatus?.total_pnl ?? 0, icon: '💰' },
             { label: "Today's P&L", value: botStatus?.today_pnl ?? 0, icon: '📊' },
@@ -882,14 +887,14 @@ export default function RealTradingPage() {
             { label: "Today's Trades", value: botStatus?.today_trades ?? 0, icon: '📝', isCount: true },
           ].map(card => (
             <GlassCard key={card.label} className={`border ${card.isPercent || card.isCount ? 'border-white/5' : pnlBg(card.value)}`}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-lg">{card.icon}</span>
+              <div className="flex items-center justify-between mb-1 sm:mb-2">
+                <span className="text-base sm:text-lg">{card.icon}</span>
               </div>
-              <p className="text-xs text-gray-400">{card.label}</p>
-              <p className={`text-2xl font-bold ${card.isPercent ? (card.value >= 50 ? 'text-accent-green' : 'text-accent-red') : card.isCount ? 'text-white' : pnlColor(card.value)}`}>
+              <p className="text-[10px] sm:text-xs text-gray-400">{card.label}</p>
+              <p className={`text-lg sm:text-2xl font-bold ${card.isPercent ? (card.value >= 50 ? 'text-accent-green' : 'text-accent-red') : card.isCount ? 'text-white' : pnlColor(card.value)}`}>
                 {card.isPercent ? `${card.value.toFixed(1)}%` : card.isCount ? card.value : formatINR(card.value)}
               </p>
-              {card.sub && <p className="text-xs text-gray-500 mt-1">{card.sub}</p>}
+              {card.sub && <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1">{card.sub}</p>}
             </GlassCard>
           ))}
         </div>
@@ -898,19 +903,28 @@ export default function RealTradingPage() {
       {/* ════════════ 6. OPEN POSITIONS TABLE ════════════ */}
       <motion.div {...fadeIn}>
         <div className="glass-card overflow-hidden">
-          <div className="p-4 border-b border-white/5 flex items-center justify-between">
-            <h2 className="font-bold flex items-center gap-2">📝 Open Positions <span className="text-xs bg-accent-blue/10 text-accent-blue px-2 py-0.5 rounded-full">{positions.length}</span></h2>
+          <div className="p-3 sm:p-4 border-b border-white/5 flex items-center justify-between">
+            <h2 className="text-sm sm:text-base font-bold flex items-center gap-2">📝 Open Positions <span className="text-xs bg-accent-blue/10 text-accent-blue px-2 py-0.5 rounded-full">{positions.length}</span></h2>
           </div>
           {positions.length === 0 ? (
-            <div className="p-8 text-center text-gray-500 text-sm">No open positions</div>
+            <div className="p-6 sm:p-8 text-center text-gray-500 text-sm">No open positions</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-0">
+              <table className="w-full text-xs sm:text-sm min-w-[600px]">
                 <thead>
-                  <tr className="text-xs text-gray-500 border-b border-white/5">
-                    {['#', 'Symbol', 'Signal', 'Conf.', 'Entry ₹', 'Target ₹', 'SL ₹', 'Qty', 'P&L ₹', 'P&L %', 'Highest ₹', ''].map(h => (
-                      <th key={h} className="px-3 py-3 text-left font-medium">{h}</th>
-                    ))}
+                  <tr className="text-[10px] sm:text-xs text-gray-500 border-b border-white/5">
+                    <th className="px-2 sm:px-3 py-2 sm:py-3 text-left font-medium">#</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">Symbol</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">Signal</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium hidden sm:table-cell">Conf.</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">Entry</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium hidden sm:table-cell">Target</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">SL</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium hidden sm:table-cell">Qty</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">P&L</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">%</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium hidden md:table-cell">High</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -920,17 +934,17 @@ export default function RealTradingPage() {
                     const pnlPct = p.entry_price > 0 ? ((cur - p.entry_price) / p.entry_price) * 100 : 0;
                     return (
                       <tr key={p.trade_id} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="px-3 py-3 text-gray-500">{i + 1}</td>
-                        <td className="px-3 py-3 font-semibold text-white">{p.symbol}</td>
-                        <td className="px-3 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${p.signal?.includes('BUY') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'}`}>
+                        <td className="px-2 sm:px-3 py-2 sm:py-3 text-gray-500">{i + 1}</td>
+                        <td className="px-2 sm:px-3 py-2 font-semibold text-white text-xs sm:text-sm">{p.symbol}</td>
+                        <td className="px-2 sm:px-3 py-2">
+                          <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full ${p.signal?.includes('BUY') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'}`}>
                             {p.signal}
                           </span>
                         </td>
-                        <td className={`px-3 py-3 font-medium ${confidenceColor(p.confidence)}`}>{p.confidence}%</td>
-                        <td className="px-3 py-3">{formatINR(p.entry_price)}</td>
-                        <td className="px-3 py-3 text-accent-green">{formatINR(p.target_price)}</td>
-                        <td className={`px-3 py-3 font-medium ${
+                        <td className={`px-2 sm:px-3 py-2 font-medium hidden sm:table-cell ${confidenceColor(p.confidence)}`}>{p.confidence}%</td>
+                        <td className="px-2 sm:px-3 py-2 text-xs">{formatINR(p.entry_price)}</td>
+                        <td className="px-2 sm:px-3 py-2 text-accent-green text-xs hidden sm:table-cell">{formatINR(p.target_price)}</td>
+                        <td className={`px-2 sm:px-3 py-2 text-xs font-medium ${
                           p.highest_price && p.highest_price > p.entry_price && p.stop_loss > (p.entry_price * 0.98)
                             ? 'text-accent-orange' : 'text-accent-red'
                         }`}>
@@ -939,15 +953,15 @@ export default function RealTradingPage() {
                             <span className="ml-1 text-accent-orange" title="Trailing SL active">↑</span>
                           )}
                         </td>
-                        <td className="px-3 py-3">{p.quantity}</td>
-                        <td className={`px-3 py-3 font-semibold ${pnlColor(pnl)}`}>{formatINR(pnl)}</td>
-                        <td className={`px-3 py-3 ${pnlColor(pnlPct)}`}>{pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%</td>
-                        <td className="px-3 py-3 text-gray-400">{formatINR(p.highest_price || 0)}</td>
-                        <td className="px-3 py-3">
+                        <td className="px-2 sm:px-3 py-2 hidden sm:table-cell">{p.quantity}</td>
+                        <td className={`px-2 sm:px-3 py-2 font-semibold ${pnlColor(pnl)}`}>{formatINR(pnl)}</td>
+                        <td className={`px-2 sm:px-3 py-2 ${pnlColor(pnlPct)}`}>{pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%</td>
+                        <td className="px-2 sm:px-3 py-2 text-gray-400 hidden md:table-cell">{formatINR(p.highest_price || 0)}</td>
+                        <td className="px-2 sm:px-3 py-2">
                           <button onClick={() => setCloseTradeId(p.trade_id)}
                             disabled={actionLoading === `close-${p.trade_id}`}
-                            className="text-xs px-2 py-1 rounded bg-accent-red/10 text-accent-red hover:bg-accent-red/20 border border-accent-red/20 transition-all disabled:opacity-50">
-                            ✕ Close
+                            className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-1 rounded bg-accent-red/10 text-accent-red hover:bg-accent-red/20 border border-accent-red/20 transition-all disabled:opacity-50">
+                            ✕
                           </button>
                         </td>
                       </tr>
@@ -956,8 +970,8 @@ export default function RealTradingPage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-white/10 bg-dark-800/50">
-                    <td colSpan={8} className="px-3 py-3 text-right text-sm font-semibold text-gray-400">Total Unrealised:</td>
-                    <td colSpan={4} className={`px-3 py-3 text-lg font-bold ${pnlColor(totalUnrealisedPnl)}`}>{formatINR(totalUnrealisedPnl)}</td>
+                    <td colSpan={8} className="px-2 sm:px-3 py-2 sm:py-3 text-right text-xs sm:text-sm font-semibold text-gray-400">Unrealised:</td>
+                    <td colSpan={4} className={`px-2 sm:px-3 py-2 text-base sm:text-lg font-bold ${pnlColor(totalUnrealisedPnl)}`}>{formatINR(totalUnrealisedPnl)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -969,43 +983,51 @@ export default function RealTradingPage() {
       {/* ════════════ 7. CLOSED TRADES TABLE ════════════ */}
       <motion.div {...fadeIn}>
         <div className="glass-card overflow-hidden">
-          <div className="p-4 border-b border-white/5">
-            <h2 className="font-bold flex items-center gap-2">📋 Closed Trades <span className="text-xs bg-gray-700/50 text-gray-400 px-2 py-0.5 rounded-full">{closedTrades.length}</span></h2>
+          <div className="p-3 sm:p-4 border-b border-white/5">
+            <h2 className="text-sm sm:text-base font-bold flex items-center gap-2">📋 Closed Trades <span className="text-xs bg-gray-700/50 text-gray-400 px-2 py-0.5 rounded-full">{closedTrades.length}</span></h2>
           </div>
           {closedTrades.length === 0 ? (
-            <div className="p-8 text-center text-gray-500 text-sm">No closed trades yet</div>
+            <div className="p-6 sm:p-8 text-center text-gray-500 text-sm">No closed trades yet</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs sm:text-sm min-w-[550px]">
                 <thead>
-                  <tr className="text-xs text-gray-500 border-b border-white/5">
-                    {['#', 'Time', 'Symbol', 'Signal', 'Entry ₹', 'Exit ₹', 'P&L ₹', 'P&L %', 'Qty', 'Exit Reason', 'Mode'].map(h => (
-                      <th key={h} className="px-3 py-3 text-left font-medium">{h}</th>
-                    ))}
+                  <tr className="text-[10px] sm:text-xs text-gray-500 border-b border-white/5">
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">#</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium hidden sm:table-cell">Time</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">Symbol</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium hidden sm:table-cell">Signal</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">Entry</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">Exit</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">P&L</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">%</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium hidden md:table-cell">Qty</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">Exit</th>
+                    <th className="px-2 sm:px-3 py-2 text-left font-medium">Mode</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {closedTrades.map((t, i) => (
                     <tr key={t.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-3 py-3 text-gray-500">{i + 1}</td>
-                      <td className="px-3 py-3 text-gray-400 text-xs">{(t.exit_time || t.timestamp || '').replace('T', ' ').slice(0, 16)}</td>
-                      <td className="px-3 py-3 font-semibold text-white">{t.symbol}</td>
-                      <td className="px-3 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${t.signal?.includes('BUY') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'}`}>
+                      <td className="px-2 sm:px-3 py-2 text-gray-500">{i + 1}</td>
+                      <td className="px-2 sm:px-3 py-2 text-gray-400 text-[10px] sm:text-xs hidden sm:table-cell">{(t.exit_time || t.timestamp || '').replace('T', ' ').slice(0, 16)}</td>
+                      <td className="px-2 sm:px-3 py-2 font-semibold text-white text-xs">{t.symbol}</td>
+                      <td className="px-2 sm:px-3 py-2 hidden sm:table-cell">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${t.signal?.includes('BUY') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'}`}>
                           {t.signal}
                         </span>
                       </td>
-                      <td className="px-3 py-3">{formatINR(t.entry_price)}</td>
-                      <td className="px-3 py-3">{formatINR(t.exit_price)}</td>
-                      <td className={`px-3 py-3 font-semibold ${pnlColor(t.pnl)}`}>{formatINR(t.pnl)}</td>
-                      <td className={`px-3 py-3 ${pnlColor(t.pnl_pct)}`}>{t.pnl_pct >= 0 ? '+' : ''}{t.pnl_pct.toFixed(2)}%</td>
-                      <td className="px-3 py-3">{t.quantity}</td>
-                      <td className="px-3 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${exitBadge(t.exit_reason)}`}>{t.exit_reason}</span>
+                      <td className="px-2 sm:px-3 py-2 text-xs">{formatINR(t.entry_price)}</td>
+                      <td className="px-2 sm:px-3 py-2 text-xs">{formatINR(t.exit_price)}</td>
+                      <td className={`px-2 sm:px-3 py-2 font-semibold ${pnlColor(t.pnl)}`}>{formatINR(t.pnl)}</td>
+                      <td className={`px-2 sm:px-3 py-2 ${pnlColor(t.pnl_pct)}`}>{t.pnl_pct >= 0 ? '+' : ''}{t.pnl_pct.toFixed(1)}%</td>
+                      <td className="px-2 sm:px-3 py-2 hidden md:table-cell">{t.quantity}</td>
+                      <td className="px-2 sm:px-3 py-2">
+                        <span className={`text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full ${exitBadge(t.exit_reason)}`}>{t.exit_reason}</span>
                       </td>
-                      <td className="px-3 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${t.is_paper ? 'bg-accent-gold/10 text-accent-gold' : 'bg-accent-red/10 text-accent-red'}`}>
-                          {t.is_paper ? '📝 Paper' : '🔴 Live'}
+                      <td className="px-2 sm:px-3 py-2">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${t.is_paper ? 'bg-accent-gold/10 text-accent-gold' : 'bg-accent-red/10 text-accent-red'}`}>
+                          {t.is_paper ? '📝' : '🔴'}
                         </span>
                       </td>
                     </tr>
@@ -1013,10 +1035,10 @@ export default function RealTradingPage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-white/10 bg-dark-800/50">
-                    <td colSpan={6} className="px-3 py-3 text-right text-sm font-semibold text-gray-400">
-                      Total Realised: ({botStatus?.wins ?? 0}W / {botStatus?.losses ?? 0}L)
+                    <td colSpan={6} className="px-2 sm:px-3 py-2 text-right text-xs sm:text-sm font-semibold text-gray-400">
+                      Realised: ({botStatus?.wins ?? 0}W / {botStatus?.losses ?? 0}L)
                     </td>
-                    <td colSpan={5} className={`px-3 py-3 text-lg font-bold ${pnlColor(totalRealisedPnl)}`}>{formatINR(totalRealisedPnl)}</td>
+                    <td colSpan={5} className={`px-2 sm:px-3 py-2 text-base sm:text-lg font-bold ${pnlColor(totalRealisedPnl)}`}>{formatINR(totalRealisedPnl)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -1027,15 +1049,15 @@ export default function RealTradingPage() {
 
       {/* ════════════ 8. P&L CHART ════════════ */}
       {chartData.length > 0 && (
-        <motion.div {...fadeIn} className="glass-card p-5">
-          <h2 className="font-bold mb-4 flex items-center gap-2">📊 Daily P&L Chart</h2>
-          <ResponsiveContainer width="100%" height={280}>
-            <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+        <motion.div {...fadeIn} className="glass-card p-3 sm:p-5">
+          <h2 className="text-sm sm:text-base font-bold mb-3 sm:mb-4 flex items-center gap-2">📊 Daily P&L</h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${v}`} />
-              <Tooltip contentStyle={{ background: '#0f1523', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '12px' }}
-                formatter={(value, name) => [formatINR(Number(value ?? 0)), name === 'pnl' ? 'Daily P&L' : 'Cumulative']}
+              <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={v => `₹${v}`} />
+              <Tooltip contentStyle={{ background: '#0f1523', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '11px' }}
+                formatter={(value, name) => [formatINR(Number(value ?? 0)), name === 'pnl' ? 'Daily' : 'Cum.']}
                 labelStyle={{ color: '#9ca3af' }} />
               <ReferenceLine y={0} stroke="rgba(255,255,255,0.1)" />
               <Bar dataKey="pnl" radius={[4, 4, 0, 0]} maxBarSize={40}>
@@ -1052,15 +1074,15 @@ export default function RealTradingPage() {
       {/* ════════════ 9. UPSTOX LIVE DATA ════════════ */}
       {isAuth && (
         <motion.div {...fadeIn} className="glass-card overflow-hidden">
-          <div className="flex border-b border-white/5">
+          <div className="flex border-b border-white/5 overflow-x-auto">
             {(['positions', 'orders', 'funds'] as const).map(tab => (
               <button key={tab} onClick={() => setLiveDataTab(tab)}
-                className={`flex-1 px-4 py-3 text-sm font-medium transition-all capitalize ${liveDataTab === tab ? `text-${modeAccent} border-b-2 border-${modeAccent} bg-white/[0.02]` : 'text-gray-500 hover:text-gray-300'}`}>
-                {tab === 'positions' ? '📊 Live Positions' : tab === 'orders' ? '📋 Order Book' : '💰 Account Funds'}
+                className={`flex-1 min-w-0 px-2 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium transition-all capitalize whitespace-nowrap ${liveDataTab === tab ? `text-${modeAccent} border-b-2 border-${modeAccent} bg-white/[0.02]` : 'text-gray-500 hover:text-gray-300'}`}>
+                {tab === 'positions' ? '📊 Pos' : tab === 'orders' ? '📋 Orders' : '💰 Funds'}
               </button>
             ))}
           </div>
-          <div className="p-4">
+          <div className="p-3 sm:p-4">
             {liveDataTab === 'positions' && (
               livePositions?.data && Array.isArray(livePositions.data) && livePositions.data.length > 0 ? (
                 <div className="overflow-x-auto">
@@ -1127,18 +1149,18 @@ export default function RealTradingPage() {
 
       {/* ════════════ 10. ACTIVITY LOG ════════════ */}
       <motion.div {...fadeIn} className="glass-card overflow-hidden">
-        <div className="p-4 border-b border-white/5">
-          <h2 className="font-bold flex items-center gap-2">📜 Activity Log <span className="text-xs bg-gray-700/50 text-gray-400 px-2 py-0.5 rounded-full">{logs.length}</span></h2>
+        <div className="p-3 sm:p-4 border-b border-white/5">
+          <h2 className="text-sm sm:text-base font-bold flex items-center gap-2">📜 Activity Log <span className="text-xs bg-gray-700/50 text-gray-400 px-2 py-0.5 rounded-full">{logs.length}</span></h2>
         </div>
-        <div ref={logRef} className="max-h-72 overflow-y-auto p-4 space-y-1">
+        <div ref={logRef} className="max-h-52 sm:max-h-72 overflow-y-auto p-3 sm:p-4 space-y-0.5 sm:space-y-1">
           {logs.length === 0 ? (
             <p className="text-gray-500 text-sm text-center py-4">No log entries</p>
           ) : (
             logs.map((entry, i) => (
-              <div key={i} className="flex items-start gap-2 py-1.5 text-sm border-b border-white/[0.02] last:border-0">
-                <span className="text-xs text-gray-600 font-mono w-16 shrink-0">{entry.time}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${logBadge(entry.type)}`}>{entry.type}</span>
-                <span className="text-gray-300 break-all">{entry.msg}</span>
+              <div key={i} className="flex items-start gap-1.5 sm:gap-2 py-1 sm:py-1.5 text-xs sm:text-sm border-b border-white/[0.02] last:border-0">
+                <span className="text-[10px] sm:text-xs text-gray-600 font-mono w-12 sm:w-16 shrink-0">{entry.time}</span>
+                <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full shrink-0 ${logBadge(entry.type)}`}>{entry.type}</span>
+                <span className="text-gray-300 break-all text-[11px] sm:text-sm leading-tight">{entry.msg}</span>
               </div>
             ))
           )}
@@ -1149,14 +1171,14 @@ export default function RealTradingPage() {
       {/* ════════════ 11. BOT CONFIG DISPLAY ════════════ */}
       {config && (
         <motion.div {...fadeIn} className="glass-card overflow-hidden">
-          <div className="p-4 border-b border-white/5">
-            <h2 className="font-bold flex items-center gap-2">⚙️ Bot Configuration</h2>
+          <div className="p-3 sm:p-4 border-b border-white/5">
+            <h2 className="text-sm sm:text-base font-bold flex items-center gap-2">⚙️ Bot Configuration</h2>
           </div>
-          <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="p-3 sm:p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3">
             {Object.entries(config).map(([k, v]) => (
-              <div key={k} className="bg-dark-800/50 rounded-lg p-3 group">
-                <p className="text-xs text-gray-500 mb-1">{k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</p>
-                <p className="text-sm font-semibold text-white">
+              <div key={k} className="bg-dark-800/50 rounded-lg p-2 sm:p-3 group">
+                <p className="text-[10px] sm:text-xs text-gray-500 mb-0.5 sm:mb-1 truncate">{k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</p>
+                <p className="text-xs sm:text-sm font-semibold text-white truncate">
                   {typeof v === 'boolean' ? (v ? '✅ Yes' : '❌ No') : typeof v === 'number' && k.includes('loss') || k.includes('size') || k.includes('capital') ? formatINR(v as number) : String(v)}
                 </p>
               </div>
