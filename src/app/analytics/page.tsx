@@ -90,6 +90,7 @@ type Tab = 'overview' | 'pnl' | 'trades' | 'risk' | 'journal' | 'ai';
 export default function AnalyticsPage() {
   const [data, setData] = useState<FullAnalytics | null>(null);
   const [aiData, setAiData] = useState<Record<string, unknown> | null>(null);
+  const [botStatus, setBotStatus] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<Tab>('overview');
@@ -99,14 +100,16 @@ export default function AnalyticsPage() {
   const fetchData = useCallback(async () => {
     try {
       const params = paperFilter !== 'all' ? `?paper=${paperFilter}` : '';
-      const [res, aiRes] = await Promise.all([
+      const [res, aiRes, botRes] = await Promise.all([
         fetch(`${API_BASE}/api/analytics/full${params}`),
         fetch(`${API_BASE}/api/analytics/learning_insights`),
+        fetch(`${API_BASE}/api/bot/status`),
       ]);
       if (!res.ok) throw new Error(`${res.status}`);
       const json = await res.json();
       setData(json);
       if (aiRes.ok) setAiData(await aiRes.json());
+      if (botRes.ok) setBotStatus(await botRes.json());
       setError('');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load analytics');
@@ -169,6 +172,25 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
+        {/* Bot Status Bar */}
+        {botStatus && (
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 px-3 py-2 bg-white/[0.03] border border-white/[0.06] rounded-xl text-xs">
+            <span className={botStatus.enabled ? 'text-emerald-400' : 'text-red-400'}>
+              {botStatus.enabled ? '🟢 Bot Running' : '🔴 Bot Stopped'}
+            </span>
+            <span className="text-gray-500">|</span>
+            <span className="text-gray-400">Mode: <span className={botStatus.mode === 'paper' ? 'text-yellow-400' : 'text-red-400'}>{botStatus.mode === 'paper' ? '📄 Paper' : '💰 Live'}</span></span>
+            <span className="text-gray-500">|</span>
+            <span className="text-gray-400">Today: <span className={(botStatus.today?.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+              {(botStatus.today?.pnl || 0) >= 0 ? '+' : ''}₹{Math.abs(botStatus.today?.pnl || 0).toLocaleString('en-IN')}
+            </span> ({botStatus.today?.wins || 0}W/{botStatus.today?.losses || 0}L)</span>
+            <span className="text-gray-500">|</span>
+            <span className="text-gray-400">Total: <span className="text-white">{botStatus.stats?.total_trades || 0} trades</span> ({botStatus.stats?.win_rate || 0}% WR)</span>
+            <span className="text-gray-500">|</span>
+            <span className="text-gray-400">Scan: <span className="text-gray-300">{botStatus.last_scan || '—'}</span></span>
+          </div>
+        )}
+
         {/* Tab Navigation — scrollable on mobile, larger touch targets */}
         <div className="flex gap-1 mb-4 sm:mb-6 overflow-x-auto pb-2 -mx-2 px-2 scrollbar-hide">
           {tabs.map(t => (
@@ -184,10 +206,27 @@ export default function AnalyticsPage() {
         {/* Data mode indicator */}
         {data.summary.total_trades === 0 && (
           <div className="mb-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 sm:p-4 text-center">
-            <p className="text-yellow-400 text-sm font-medium">
-              📭 No {paperFilter === 'false' ? 'live' : paperFilter === 'true' ? 'paper' : ''} trades found.
-              {paperFilter !== 'all' && <button onClick={() => setPaperFilter('all')} className="ml-2 underline hover:text-yellow-300">Show all trades</button>}
+            <p className="text-yellow-400 text-sm font-medium mb-2">
+              📭 No {paperFilter === 'false' ? 'live' : paperFilter === 'true' ? 'paper' : ''} trades in analytics DB.
+              {botStatus && (botStatus.stats?.total_trades || 0) > 0 && (
+                <span className="text-gray-400 ml-1">({botStatus.stats.total_trades} trades in bot DB — needs sync)</span>
+              )}
             </p>
+            <div className="flex gap-2 justify-center">
+              {paperFilter !== 'all' && (
+                <button onClick={() => setPaperFilter('all')} className="px-3 py-1.5 bg-yellow-600/20 text-yellow-400 rounded-lg text-xs hover:bg-yellow-600/30">
+                  Show all trades
+                </button>
+              )}
+              <button onClick={async () => {
+                try {
+                  await fetch(`${API_BASE}/api/analytics/sync`, { method: 'POST' });
+                  fetchData();
+                } catch (e) { console.error(e); }
+              }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs hover:bg-emerald-500">
+                🔄 Sync Trades to Analytics
+              </button>
+            </div>
           </div>
         )}
         {paperFilter !== 'all' && data.summary.total_trades > 0 && (
@@ -225,8 +264,8 @@ function OverviewTab({ data }: { data: FullAnalytics }) {
     { label: 'Today P&L', value: fmtShort(s.today_pnl), color: s.today_pnl >= 0 ? 'text-emerald-400' : 'text-red-400', sub: `${s.today_trades} today` },
     { label: 'Win Rate', value: `${s.win_rate}%`, color: s.win_rate >= 60 ? 'text-emerald-400' : s.win_rate >= 45 ? 'text-yellow-400' : 'text-red-400', sub: `${s.wins}W / ${s.losses}L` },
     { label: 'Profit Factor', value: `${s.profit_factor}x`, color: s.profit_factor >= 1.5 ? 'text-emerald-400' : s.profit_factor >= 1 ? 'text-yellow-400' : 'text-red-400', sub: `Exp: ₹${s.expectancy}` },
-    { label: 'Sharpe', value: perf.sharpe_ratio.toFixed(2), color: perf.sharpe_ratio >= 1 ? 'text-emerald-400' : perf.sharpe_ratio >= 0 ? 'text-yellow-400' : 'text-red-400', sub: `Sortino: ${perf.sortino_ratio}` },
-    { label: 'Max DD', value: fmtShort(-perf.max_drawdown), color: 'text-red-400', sub: `${perf.max_drawdown_pct}% peak` },
+    { label: 'Sharpe', value: (perf.sharpe_ratio || 0).toFixed(2), color: (perf.sharpe_ratio || 0) >= 1 ? 'text-emerald-400' : (perf.sharpe_ratio || 0) >= 0 ? 'text-yellow-400' : 'text-red-400', sub: `Sortino: ${(perf.sortino_ratio || 0).toFixed(2)}` },
+    { label: 'Max DD', value: fmtShort(-(perf.max_drawdown || 0)), color: 'text-red-400', sub: `${perf.max_drawdown_pct || 0}% peak` },
     { label: 'Hold Time', value: `${s.avg_hold_minutes.toFixed(0)}m`, color: 'text-cyan-400', sub: `${s.max_win_streak}W streak` },
     { label: 'Open Pos', value: `${s.open_positions}`, color: 'text-purple-400', sub: fmtShort(s.capital_deployed) },
   ];
@@ -248,6 +287,7 @@ function OverviewTab({ data }: { data: FullAnalytics }) {
       {/* Equity Curve — shorter on mobile */}
       <div className={card}>
         <h3 className="text-xs sm:text-sm font-semibold text-gray-300 mb-2">📈 Equity Curve</h3>
+        {data.equity_curve.length > 0 ? (
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={data.equity_curve}>
             <defs>
@@ -263,6 +303,7 @@ function OverviewTab({ data }: { data: FullAnalytics }) {
             <Area type="monotone" dataKey="equity" stroke="#00C9A7" fill="url(#eqGrad)" strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
+        ) : <p className="text-gray-500 text-xs text-center py-8">No equity data yet</p>}
       </div>
 
       {/* Best/Worst + Sector — stack on mobile */}
@@ -297,6 +338,7 @@ function OverviewTab({ data }: { data: FullAnalytics }) {
         {/* Sector Pie — smaller on mobile */}
         <div className={card}>
           <h3 className="text-xs sm:text-sm font-semibold text-gray-300 mb-2">🏭 Sectors</h3>
+          {data.sectors.sectors.length > 0 ? (
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie data={data.sectors.sectors.slice(0, 6)} cx="50%" cy="50%" outerRadius={65} innerRadius={30}
@@ -313,6 +355,7 @@ function OverviewTab({ data }: { data: FullAnalytics }) {
               <Tooltip contentStyle={tooltipStyle} />
             </PieChart>
           </ResponsiveContainer>
+          ) : <p className="text-gray-500 text-xs text-center py-8">No sector data yet</p>}
         </div>
       </div>
     </div>
@@ -328,6 +371,7 @@ function PnLTab({ data }: { data: FullAnalytics }) {
       {/* Daily P&L + Cumulative */}
       <div className={card}>
         <h3 className="text-xs sm:text-sm font-semibold text-gray-300 mb-2">📅 Daily P&L</h3>
+        {data.daily_pnl.length > 0 ? (
         <ResponsiveContainer width="100%" height={220}>
           <ComposedChart data={data.daily_pnl}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1f1f3a" />
@@ -340,11 +384,14 @@ function PnLTab({ data }: { data: FullAnalytics }) {
             <Line yAxisId="cum" type="monotone" dataKey="cumulative_pnl" name="Cumulative" stroke="#845EF7" strokeWidth={2} dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
+        ) : <p className="text-gray-500 text-xs text-center py-8">No daily P&L data yet</p>}
       </div>
 
       {/* Monthly P&L */}
       <div className={card}>
         <h3 className="text-xs sm:text-sm font-semibold text-gray-300 mb-2">📊 Monthly P&L</h3>
+        {data.monthly_pnl.length > 0 ? (
+        <>
         <ResponsiveContainer width="100%" height={180}>
           <BarChart data={data.monthly_pnl}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1f1f3a" />
@@ -378,11 +425,12 @@ function PnLTab({ data }: { data: FullAnalytics }) {
             </tbody>
           </table>
         </div>
+        </>
+        ) : <p className="text-gray-500 text-xs text-center py-8">No monthly P&L data yet</p>}
       </div>
-
-      {/* Drawdown Chart */}
       <div className={card}>
         <h3 className="text-xs sm:text-sm font-semibold text-gray-300 mb-2">📉 Drawdown <span className="text-red-400 ml-1">Max: ₹{data.drawdown.max_drawdown}</span></h3>
+        {data.drawdown.drawdown_series.length > 0 ? (
         <ResponsiveContainer width="100%" height={160}>
           <AreaChart data={data.drawdown.drawdown_series}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1f1f3a" />
@@ -392,6 +440,7 @@ function PnLTab({ data }: { data: FullAnalytics }) {
             <Area type="monotone" dataKey="drawdown" stroke="#FF6B6B" fill="#FF6B6B" fillOpacity={0.2} strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
+        ) : <p className="text-gray-500 text-xs text-center py-8">No drawdown data yet</p>}
       </div>
     </div>
   );
@@ -406,6 +455,7 @@ function TradeQualityTab({ data }: { data: FullAnalytics }) {
       {/* Win Rate Trend */}
       <div className={card}>
         <h3 className="text-xs sm:text-sm font-semibold text-gray-300 mb-2">📈 Rolling Win Rate (20-trade)</h3>
+        {data.win_rate_trend.length > 0 ? (
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={data.win_rate_trend}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1f1f3a" />
@@ -416,6 +466,7 @@ function TradeQualityTab({ data }: { data: FullAnalytics }) {
             <Line type="monotone" dataKey={() => 50} stroke="#FF6B6B" strokeDasharray="5 5" strokeWidth={1} dot={false} />
           </LineChart>
         </ResponsiveContainer>
+        ) : <p className="text-gray-500 text-xs text-center py-8">Not enough trades for win rate trend</p>}
       </div>
 
       {/* Signal Accuracy + Confidence — stack on mobile */}
@@ -528,10 +579,10 @@ function RiskTab({ data }: { data: FullAnalytics }) {
     { label: 'VaR (99%)', value: fmtShort(r.var_99), desc: 'Worst-case daily', color: 'text-red-400' },
     { label: 'Max Conc.', value: `${r.max_concentration}%`, desc: 'Single stock exposure', color: r.max_concentration > 50 ? 'text-red-400' : 'text-yellow-400' },
     { label: 'Avg Pos Size', value: fmtShort(r.avg_position_size), desc: 'Capital per trade', color: 'text-cyan-400' },
-    { label: 'Sharpe', value: perf.sharpe_ratio.toFixed(2), desc: '>1 good, >2 great', color: perf.sharpe_ratio >= 1 ? 'text-emerald-400' : 'text-yellow-400' },
-    { label: 'Sortino', value: perf.sortino_ratio.toFixed(2), desc: 'Downside-adjusted', color: perf.sortino_ratio >= 1 ? 'text-emerald-400' : 'text-yellow-400' },
-    { label: 'Recovery', value: perf.recovery_factor.toFixed(2), desc: 'P&L / Max DD', color: perf.recovery_factor >= 1 ? 'text-emerald-400' : 'text-yellow-400' },
-    { label: 'Profitable', value: `${perf.profitable_days}/${perf.total_days}`, desc: `${perf.total_days > 0 ? (perf.profitable_days / perf.total_days * 100).toFixed(0) : 0}% days`, color: 'text-cyan-400' },
+    { label: 'Sharpe', value: (perf.sharpe_ratio || 0).toFixed(2), desc: '>1 good, >2 great', color: (perf.sharpe_ratio || 0) >= 1 ? 'text-emerald-400' : 'text-yellow-400' },
+    { label: 'Sortino', value: (perf.sortino_ratio || 0).toFixed(2), desc: 'Downside-adjusted', color: (perf.sortino_ratio || 0) >= 1 ? 'text-emerald-400' : 'text-yellow-400' },
+    { label: 'Recovery', value: (perf.recovery_factor || 0).toFixed(2), desc: 'P&L / Max DD', color: (perf.recovery_factor || 0) >= 1 ? 'text-emerald-400' : 'text-yellow-400' },
+    { label: 'Profitable', value: `${perf.profitable_days || 0}/${perf.total_days || 0}`, desc: `${(perf.total_days || 0) > 0 ? ((perf.profitable_days || 0) / (perf.total_days || 1) * 100).toFixed(0) : 0}% days`, color: 'text-cyan-400' },
   ];
 
   return (
@@ -675,7 +726,18 @@ function JournalTab({ data, page, setPage, paperFilter }: { data: FullAnalytics;
       {entries.length === 0 && (
         <div className="text-center py-12 text-gray-500">
           <p className="text-4xl mb-3">📝</p>
-          <p className="text-sm">No closed trades yet. Start trading to build your journal!</p>
+          <p className="text-sm mb-3">No closed trades yet. Start trading to build your journal!</p>
+          {data.summary.total_trades > 0 && (
+            <p className="text-xs text-yellow-400 mb-2">Analytics has {data.summary.total_trades} trades — journal may need syncing.</p>
+          )}
+          <button onClick={async () => {
+            try {
+              await fetch(`${API_BASE}/api/analytics/sync`, { method: 'POST' });
+              window.location.reload();
+            } catch (e) { console.error(e); }
+          }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs hover:bg-emerald-500">
+            🔄 Sync Trades
+          </button>
         </div>
       )}
     </div>

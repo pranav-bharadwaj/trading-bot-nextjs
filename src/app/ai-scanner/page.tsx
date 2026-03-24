@@ -26,13 +26,13 @@ interface ScanStock {
   target_prob: number;
   sl_prob: number;
   fvp_signal: string;
-  premium_disc: string;
+  premium_disc: string | number;
   amd_regime: string;
   momentum: number;
   rsi: number;
   vol_ratio: number;
   vol_spike: boolean;
-  custom: boolean;
+  custom: boolean | null;
 }
 
 interface ScannerResponse {
@@ -96,9 +96,11 @@ function fvpBadge(signal: string): { text: string; cls: string } {
   return { text: 'NEUTRAL', cls: 'bg-accent-gold/10 text-accent-gold border-accent-gold/20' };
 }
 
-function parsePremDisc(val: string): { num: number; label: string } {
-  const n = parseFloat((val ?? '0').replace('%', ''));
-  return { num: n, label: val ?? '—' };
+function parsePremDisc(val: string | number | null | undefined): { num: number; label: string } {
+  if (val == null) return { num: 0, label: '—' };
+  if (typeof val === 'number') return { num: val, label: `${val.toFixed(2)}%` };
+  const n = parseFloat(String(val).replace('%', ''));
+  return { num: isNaN(n) ? 0 : n, label: String(val) || '—' };
 }
 
 function rsiColor(rsi: number): string {
@@ -186,26 +188,25 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                 {(() => {
                   const mc = (prediction.models as Record<string, unknown>)?.monte_carlo as Record<string, unknown> | undefined;
                   if (!mc) return null;
-                  const predictions = mc.predictions as Record<string, Record<string, number>> | undefined;
-                  const scenarios = mc.scenarios as Record<string, Record<string, number>> | undefined;
+                  const predictions = mc.predictions as Record<string, unknown> | undefined;
+                  const scenarios = mc.scenarios as Record<string, Record<string, unknown>> | undefined;
                   const riskMetrics = mc.risk_metrics as Record<string, number> | undefined;
-                  const day5 = predictions?.day_5;
                   return (
                     <div className="glass-card p-4">
                       <h4 className="text-xs font-semibold text-accent-blue mb-2">🎲 Monte Carlo</h4>
                       <div className="text-lg font-bold">
-                        {day5?.mean != null ? `₹${formatNumber(day5.mean)}` : '—'}
+                        {predictions?.mean != null ? `₹${formatNumber(predictions.mean as number)}` : '—'}
                       </div>
-                      {day5?.ci_lower != null && day5?.ci_upper != null && (
+                      {predictions?.ci_95 != null && Array.isArray(predictions.ci_95) && (
                         <div className="text-xs text-gray-500 mt-1">
-                          CI: ₹{formatNumber(day5.ci_lower)} – ₹{formatNumber(day5.ci_upper)}
+                          CI 95%: ₹{formatNumber((predictions.ci_95 as number[])[0])} – ₹{formatNumber((predictions.ci_95 as number[])[1])}
                         </div>
                       )}
                       {scenarios && (
                         <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                          {scenarios.bull && <div className="text-accent-green">Bull: ₹{formatNumber(scenarios.bull.target ?? scenarios.bull.price ?? 0)}</div>}
-                          {scenarios.base && <div className="text-accent-blue">Base: ₹{formatNumber(scenarios.base.target ?? scenarios.base.price ?? 0)}</div>}
-                          {scenarios.bear && <div className="text-accent-red">Bear: ₹{formatNumber(scenarios.bear.target ?? scenarios.bear.price ?? 0)}</div>}
+                          {scenarios.bull && <div className="text-accent-green">Bull: ₹{formatNumber((scenarios.bull?.avg_price as number) ?? 0)}</div>}
+                          {scenarios.base && <div className="text-accent-blue">Base: ₹{formatNumber((scenarios.base?.avg_price as number) ?? 0)}</div>}
+                          {scenarios.bear && <div className="text-accent-red">Bear: ₹{formatNumber((scenarios.bear?.avg_price as number) ?? 0)}</div>}
                         </div>
                       )}
                       {riskMetrics?.var_95 != null && (
@@ -222,12 +223,12 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                   return (
                     <div className="glass-card p-4">
                       <h4 className="text-xs font-semibold text-accent-gold mb-2">💎 Fair Value (FVP)</h4>
-                      <div className="text-lg font-bold">₹{formatNumber(fvp.fair_value as number)}</div>
+                      <div className="text-lg font-bold">₹{formatNumber((fvp?.fair_value as number) ?? 0)}</div>
                       <div className="text-xs mt-1">
-                        <span className={getSignalColor(fvp.signal as string)}>{fvp.signal as string}</span>
+                        <span className={getSignalColor((fvp?.signal as string) ?? '')}>{(fvp?.signal as string) ?? ''}</span>
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">Premium/Discount: {fvp.premium_discount as string}</div>
-                      {fvp.components != null && (
+                      <div className="text-xs text-gray-500 mt-1">Premium/Discount: {fvp?.premium_discount_pct != null ? `${(fvp.premium_discount_pct as number).toFixed(2)}%` : '—'}</div>
+                      {fvp?.components != null && (
                         <div className="text-xs text-gray-500 mt-1">
                           {Object.entries(fvp.components as Record<string, number>).slice(0, 3).map(([k, v]: [string, number]) => (
                             <div key={k}>{k}: ₹{formatNumber(v)}</div>
@@ -247,17 +248,17 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                     <div className="glass-card p-4">
                       <h4 className="text-xs font-semibold text-accent-purple mb-2">🧠 AMD Model</h4>
                       <div className="text-lg font-bold">
-                        {projection?.target != null ? `₹${formatNumber(projection.target)}` : '—'}
+                        {projection?.price_5d != null ? `₹${formatNumber(projection.price_5d)}` : '—'}
                       </div>
                       <div className="text-xs mt-1">
-                        <span className="text-gray-400">{amd.regime as string}</span>
+                        <span className="text-gray-400">{(amd.regime as string) ?? ''}</span>
                         <span className="text-gray-500 ml-2">Strength: {(((amd.trend_strength as number) ?? 0) * 100).toFixed(0)}%</span>
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        Momentum: {(amd.momentum as number)?.toFixed(2)} • {amd.hurst_interpretation as string}
+                        Momentum: {(amd.momentum as number)?.toFixed(2)} • {(amd.hurst_interpretation as string) ?? ''}
                       </div>
-                      {projection?.stop_loss != null && (
-                        <div className="text-xs text-accent-red mt-1">Projection SL: ₹{formatNumber(projection.stop_loss)}</div>
+                      {projection?.price_10d != null && (
+                        <div className="text-xs text-accent-purple mt-1">10D Projection: ₹{formatNumber(projection.price_10d)}</div>
                       )}
                     </div>
                   );
@@ -313,57 +314,51 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
               <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
                 <span>📋</span> Options Analysis
                 <span className="text-xs text-gray-500">
-                  IV: {((options.iv as number) * 100).toFixed(1)}% • Expiry: {options.expiry as string}
+                  IV: {(options.iv_est_pct as number)?.toFixed(1) ?? '—'}% • Expiry: {(options.expiry_date as string) ?? '—'}
                 </span>
               </h4>
 
               {/* Strategy cards */}
-              {options.strategies && Object.entries(options.strategies as Record<string, Record<string, unknown>>).map(([name, strat]) => (
-                <div key={name} className={`glass-card p-4 ${name === options.recommended_strategy ? 'border-accent-green/30 shadow-accent-green/10 shadow-md' : ''}`}>
+              {Array.isArray(options.strategies) && (options.strategies as Array<Record<string, unknown>>).map((strat, idx) => (
+                <div key={idx} className={`glass-card p-4 ${strat.primary ? 'border-accent-green/30 shadow-accent-green/10 shadow-md' : ''}`}>
                   <div className="flex items-center justify-between mb-2">
                     <h5 className="font-medium text-sm">
-                      {name === options.recommended_strategy && <span className="text-accent-green mr-1">★</span>}
-                      {name}
+                      {Boolean(strat.primary) && <span className="text-accent-green mr-1">★</span>}
+                      {strat.name as string}
                     </h5>
-                    <span className="text-xs text-gray-500">Lot: {strat.lot_size as number}</span>
+                    <span className="text-xs text-gray-500">R:R {(strat.risk_reward as string) ?? '—'}</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div>
                       <span className="text-gray-500">Premium</span>
-                      <div className="font-bold">₹{formatNumber(strat.net_premium as number)}</div>
+                      <div className="font-bold">₹{formatNumber((strat.net_premium as number) ?? 0)}</div>
                     </div>
                     <div>
                       <span className="text-gray-500">Target</span>
-                      <div className="font-bold text-accent-green">₹{formatNumber(strat.premium_target as number)}</div>
+                      <div className="font-bold text-accent-green">₹{formatNumber((strat.premium_target as number) ?? 0)}</div>
                     </div>
                     <div>
                       <span className="text-gray-500">Stop Loss</span>
-                      <div className="font-bold text-accent-red">₹{formatNumber(strat.premium_sl as number)}</div>
+                      <div className="font-bold text-accent-red">₹{formatNumber((strat.premium_sl as number) ?? 0)}</div>
                     </div>
                     <div>
-                      <span className="text-gray-500">Investment</span>
-                      <div className="font-bold">{formatCurrency(strat.total_investment as number)}</div>
+                      <span className="text-gray-500">Max Loss/Lot</span>
+                      <div className="font-bold text-accent-red">{formatCurrency((strat.max_loss_per_lot as number) ?? 0)}</div>
                     </div>
                   </div>
-                  {/* Greeks */}
-                  {strat.greeks != null && (
-                    <div className="grid grid-cols-4 gap-3 text-xs mt-2 pt-2 border-t border-white/5">
-                      {Object.entries(strat.greeks as Record<string, number>).map(([k, v]: [string, number]) => (
-                        <div key={k}>
-                          <span className="text-gray-500 capitalize">{k}</span>
-                          <div className="font-medium">{typeof v === 'number' ? v.toFixed(4) : String(v)}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {/* Legs */}
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {((strat.legs as Array<Record<string, unknown>>) || []).map((leg, i) => (
-                      <span key={i} className={`text-[10px] px-2 py-0.5 rounded ${
-                        leg.type === 'BUY' ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'
-                      }`}>
-                        {leg.type as string} {leg.strike as number} {leg.option_type as string} @₹{formatNumber(leg.premium as number)}
-                      </span>
+                  {/* Legs with greeks */}
+                  <div className="mt-2 space-y-1">
+                    {((strat.legs as Array<Record<string, unknown>>) ?? []).map((leg, i) => (
+                      <div key={i} className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10px] px-2 py-0.5 rounded ${
+                          leg.action === 'BUY' ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'
+                        }`}>
+                          {leg.action as string} {leg.strike as number} {leg.type as string} @₹{formatNumber((leg.premium as number) ?? 0)}
+                        </span>
+                        <span className="text-[10px] text-gray-500">
+                          Δ{(leg.delta as number)?.toFixed(2)} Θ{(leg.theta as number)?.toFixed(2)} ν{(leg.vega as number)?.toFixed(2)}
+                        </span>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -378,9 +373,9 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                       <thead>
                         <tr className="border-b border-white/5 text-gray-500">
                           <th className="p-2 text-left">Strike</th>
-                          <th className="p-2 text-right">CE LTP</th>
+                          <th className="p-2 text-right">CE Prem</th>
                           <th className="p-2 text-right">CE OI</th>
-                          <th className="p-2 text-right">PE LTP</th>
+                          <th className="p-2 text-right">PE Prem</th>
                           <th className="p-2 text-right">PE OI</th>
                         </tr>
                       </thead>
@@ -388,9 +383,9 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                         {(options.chain as Array<Record<string, unknown>>).slice(0, 10).map((row, i) => (
                           <tr key={i} className="hover:bg-white/[0.02]">
                             <td className="p-2 font-medium">{row.strike as number}</td>
-                            <td className="p-2 text-right">{formatNumber((row.ce_ltp ?? 0) as number)}</td>
+                            <td className="p-2 text-right">{formatNumber((row.ce_premium ?? 0) as number)}</td>
                             <td className="p-2 text-right text-gray-500">{((row.ce_oi ?? 0) as number).toLocaleString()}</td>
-                            <td className="p-2 text-right">{formatNumber((row.pe_ltp ?? 0) as number)}</td>
+                            <td className="p-2 text-right">{formatNumber((row.pe_premium ?? 0) as number)}</td>
                             <td className="p-2 text-right text-gray-500">{((row.pe_oi ?? 0) as number).toLocaleString()}</td>
                           </tr>
                         ))}

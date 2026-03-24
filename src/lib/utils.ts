@@ -4,7 +4,8 @@ export function cn(...inputs: string[]) {
   return inputs.filter(Boolean).join(' ');
 }
 
-export function formatCurrency(value: number, symbol = '₹'): string {
+export function formatCurrency(value: number | null | undefined, symbol = '₹'): string {
+  if (value == null || isNaN(value)) return `${symbol}0`;
   const abs = Math.abs(value);
   if (abs >= 10000000) return `${symbol}${(value / 10000000).toFixed(2)}Cr`;
   if (abs >= 100000) return `${symbol}${(value / 100000).toFixed(2)}L`;
@@ -12,14 +13,16 @@ export function formatCurrency(value: number, symbol = '₹'): string {
   return `${symbol}${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function formatNumber(value: number, decimals = 2): string {
+export function formatNumber(value: number | null | undefined, decimals = 2): string {
+  if (value == null || isNaN(value)) return '0';
   return value.toLocaleString('en-IN', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });
 }
 
-export function formatPercent(value: number): string {
+export function formatPercent(value: number | null | undefined): string {
+  if (value == null || isNaN(value)) return '0.00%';
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 }
