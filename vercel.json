@@ -6,14 +6,17 @@
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" }
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
       ]
     }
   ],
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://pranavbharadwaj.pythonanywhere.com/api/:path*"
+      "destination": "https://34.100.177.78.nip.io/api/:path*"
     }
   ]
 }
