@@ -237,7 +237,7 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                       <div className="text-xs mt-1">
                         <span className={getSignalColor((fvp?.signal as string) ?? '')}>{(fvp?.signal as string) ?? ''}</span>
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">Premium/Discount: {fvp?.premium_discount_pct != null ? `${(fvp.premium_discount_pct as number).toFixed(2)}%` : '—'}</div>
+                      <div className="text-xs text-gray-500 mt-1">Premium/Discount: {fvp?.premium_discount_pct != null && typeof fvp.premium_discount_pct === 'number' ? `${(fvp.premium_discount_pct as number).toFixed(2)}%` : '—'}</div>
                       {fvp?.components != null && (
                         <div className="text-xs text-gray-500 mt-1">
                           {Object.entries(fvp.components as Record<string, number>).slice(0, 3).map(([k, v]: [string, number]) => (
@@ -262,10 +262,10 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                       </div>
                       <div className="text-xs mt-1">
                         <span className="text-gray-400">{(amd.regime as string) ?? ''}</span>
-                        <span className="text-gray-500 ml-2">Strength: {(((amd.trend_strength as number) ?? 0) * 100).toFixed(0)}%</span>
+                        <span className="text-gray-500 ml-2">Strength: {typeof amd.trend_strength === 'number' ? `${amd.trend_strength.toFixed(0)}%` : '—'}</span>
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        Momentum: {(amd.momentum as number)?.toFixed(2)} • {(amd.hurst_interpretation as string) ?? ''}
+                        Momentum: {typeof amd.momentum === 'object' && amd.momentum != null ? `${((amd.momentum as Record<string, unknown>).score as number)?.toFixed?.(1) ?? '—'}` : typeof amd.momentum === 'number' ? (amd.momentum as number).toFixed(2) : '—'} • {(amd.hurst_interpretation as string) ?? ''}
                       </div>
                       {projection?.price_10d != null && (
                         <div className="text-xs text-accent-purple mt-1">10D Projection: ₹{formatNumber(projection.price_10d)}</div>
@@ -290,7 +290,7 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                       <div>
                         <div className="text-xs text-gray-500 mb-1">Target 1</div>
                         <div className="text-lg font-bold text-accent-green">₹{formatNumber(scan.target_1)}</div>
-                        {scan.target_prob != null && (
+                        {scan.target_prob != null && typeof scan.target_prob === 'number' && (
                           <div className="text-xs text-accent-green">{scan.target_prob.toFixed(0)}% prob</div>
                         )}
                       </div>

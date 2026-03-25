@@ -34,6 +34,7 @@ interface OptionsLeg {
   theta?: number;
   vega?: number;
   gamma?: number;
+  greeks?: { delta?: number; theta?: number; vega?: number; gamma?: number; iv?: number };
 }
 
 interface OptionsStrategy {
@@ -226,7 +227,9 @@ function OptionsSection({ data }: { data: OptionsData }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.03]">
-                  {(strat.legs || []).map((leg, li) => (
+                  {(strat.legs || []).map((leg, li) => {
+                    const g = (leg.greeks || leg) as Record<string, unknown>;
+                    return (
                     <tr key={li}>
                       <td className="py-1.5 pr-3">
                         <span className={`font-bold ${
@@ -237,18 +240,19 @@ function OptionsSection({ data }: { data: OptionsData }) {
                       </td>
                       <td className="py-1.5 pr-3 font-medium text-white">{leg.strike}</td>
                       <td className="py-1.5 pr-3 text-gray-400">{leg.type}</td>
-                      <td className="py-1.5 pr-3 text-right tabular-nums text-white">₹{leg.premium?.toFixed(2)}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums text-white">₹{typeof leg.premium === 'number' ? leg.premium.toFixed(2) : '—'}</td>
                       <td className="py-1.5 pr-3 text-right tabular-nums text-accent-blue">
-                        {leg.delta?.toFixed(2)}
+                        {typeof g.delta === 'number' ? g.delta.toFixed(2) : '—'}
                       </td>
                       <td className="py-1.5 pr-3 text-right tabular-nums text-accent-purple">
-                        {leg.theta?.toFixed(2)}
+                        {typeof g.theta === 'number' ? g.theta.toFixed(2) : '—'}
                       </td>
                       <td className="py-1.5 text-right tabular-nums text-accent-gold">
-                        {leg.vega?.toFixed(2)}
+                        {typeof g.vega === 'number' ? g.vega.toFixed(2) : '—'}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -571,7 +575,7 @@ function StockDetailModal({
                             <div className="flex items-center gap-2 text-xs">
                               <span className={getSignalColor((fvp?.signal as string) ?? '')}>{(fvp?.signal as string) ?? ''}</span>
                               <span className="text-gray-500">•</span>
-                              <span className="text-gray-400">{fvp?.premium_discount_pct != null ? `${(fvp.premium_discount_pct as number).toFixed(2)}%` : ''}</span>
+                              <span className="text-gray-400">{fvp?.premium_discount_pct != null && typeof fvp.premium_discount_pct === 'number' ? `${(fvp.premium_discount_pct as number).toFixed(2)}%` : ''}</span>
                             </div>
                             {/* Components */}
                             {components && (
@@ -586,7 +590,7 @@ function StockDetailModal({
                             )}
                             {fvp.z_score != null && (
                               <div className="text-[10px] text-gray-500">
-                                Z-Score: <span className="text-white">{(fvp.z_score as number).toFixed(2)}</span>
+                                Z-Score: <span className="text-white">{typeof fvp.z_score === 'number' ? (fvp.z_score as number).toFixed(2) : '—'}</span>
                               </div>
                             )}
                           </div>
@@ -619,7 +623,7 @@ function StockDetailModal({
                               {amd.hurst_exponent != null && (
                                 <div className="flex items-center gap-2">
                                   <span className="text-gray-500">Hurst:</span>
-                                  <span className="text-white">{(amd.hurst_exponent as number).toFixed(3)}</span>
+                                  <span className="text-white">{typeof amd.hurst_exponent === 'number' ? (amd.hurst_exponent as number).toFixed(3) : '—'}</span>
                                   {typeof amd.hurst_interpretation === 'string' && (
                                     <span className="text-gray-400 text-[10px]">({amd.hurst_interpretation})</span>
                                   )}
@@ -628,15 +632,21 @@ function StockDetailModal({
                               {amd.momentum != null && (
                                 <div className="flex items-center gap-2">
                                   <span className="text-gray-500">Momentum:</span>
-                                  <span className={`${(amd.momentum as number) >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
-                                    {(amd.momentum as number).toFixed(2)}
-                                  </span>
+                                  {typeof amd.momentum === 'object' ? (
+                                    <span className={`${((amd.momentum as Record<string, unknown>).score as number) >= 50 ? 'text-accent-green' : 'text-accent-red'}`}>
+                                      {((amd.momentum as Record<string, unknown>).score as number)?.toFixed?.(1) ?? '—'}
+                                    </span>
+                                  ) : (
+                                    <span className={`${(amd.momentum as number) >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                                      {typeof amd.momentum === 'number' ? (amd.momentum as number).toFixed(2) : '—'}
+                                    </span>
+                                  )}
                                 </div>
                               )}
                               {amd.trend_strength != null && (
                                 <div className="flex items-center gap-2">
                                   <span className="text-gray-500">Strength:</span>
-                                  <span className="text-white">{((amd.trend_strength as number) * 100).toFixed(0)}%</span>
+                                  <span className="text-white">{typeof amd.trend_strength === 'number' ? `${(amd.trend_strength as number).toFixed(0)}%` : '—'}</span>
                                 </div>
                               )}
                             </div>
@@ -679,7 +689,7 @@ function StockDetailModal({
                               <div className="text-lg font-bold text-accent-green">
                                 ₹{formatNumber(scan.target_1 ?? scan.target)}
                               </div>
-                              {scan.target_prob != null && (
+                              {scan.target_prob != null && typeof scan.target_prob === 'number' && (
                                 <div className="text-xs text-accent-green">{scan.target_prob.toFixed(0)}% prob</div>
                               )}
                             </div>
