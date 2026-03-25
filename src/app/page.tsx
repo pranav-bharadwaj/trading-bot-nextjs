@@ -100,7 +100,9 @@ function StatusBar({
   useEffect(() => {
     const id = setInterval(() => {
       setClock(getISTTime());
-      setCountdown((p) => (p <= 1 ? 5 : p - 1));
+      if (isMarketWindow()) {
+        setCountdown((p) => (p <= 1 ? 5 : p - 1));
+      }
     }, 1000);
     return () => clearInterval(id);
   }, []);

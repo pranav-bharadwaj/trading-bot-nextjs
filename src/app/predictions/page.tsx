@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePrediction } from '@/hooks/useMarketData';
+import { usePrediction, isMarketWindow } from '@/hooks/useMarketData';
 import { formatNumber, formatPercent, getPnlColor, getSignalColor, getSignalBg } from '@/lib/utils';
 import SignalBadge from '@/components/SignalBadge';
 import SkeletonCard from '@/components/SkeletonLoader';
@@ -929,8 +929,9 @@ export default function PredictionsPage() {
 
   const { data, error, isLoading, mutate } = usePrediction(index, days, modelTab, REFRESH_INTERVAL);
 
-  // Countdown timer for auto-refresh
+  // Countdown timer for auto-refresh (only during market hours)
   useEffect(() => {
+    if (!isMarketWindow()) return;
     setCountdown(REFRESH_INTERVAL / 1000);
     const timer = setInterval(() => {
       setCountdown((c) => {
