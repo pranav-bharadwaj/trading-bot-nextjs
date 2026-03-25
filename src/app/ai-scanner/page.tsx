@@ -112,15 +112,15 @@ function rsiColor(rsi: number): string {
 // ─── Stock Detail Modal ─────────────────────────────────────────────────────
 
 function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
-  const { data: prediction, isLoading: predLoading } = useSWR(
+  const { data: prediction, isLoading: predLoading, error: predError } = useSWR(
     `${API_BASE}/api/stock_predict/${encodeURIComponent(symbol)}`,
     fetcher,
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: false, errorRetryCount: 2 }
   );
-  const { data: options, isLoading: optLoading } = useSWR(
+  const { data: options, isLoading: optLoading, error: optError } = useSWR(
     `${API_BASE}/api/options/${encodeURIComponent(symbol)}`,
     fetcher,
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: false, errorRetryCount: 2 }
   );
 
   useEffect(() => {
@@ -168,6 +168,11 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                 </div>
               ))}
             </div>
+          ) : predError ? (
+            <div className="text-center py-8 text-gray-500">
+              <p>⚠️ Failed to load prediction data</p>
+              <p className="text-xs text-gray-600 mt-1">{predError?.message || 'Network error — check API connectivity'}</p>
+            </div>
           ) : prediction && !prediction.error ? (
             <div className="space-y-4">
               {/* Price + consensus */}
@@ -188,28 +193,33 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                 {(() => {
                   const mc = (prediction.models as Record<string, unknown>)?.monte_carlo as Record<string, unknown> | undefined;
                   if (!mc) return null;
-                  const predictions = mc.predictions as Record<string, unknown> | undefined;
+                  const rawPredictions = mc.predictions as Record<string, unknown> | undefined;
+                  // API returns predictions.day_1.mean, not predictions.mean directly
+                  const day1 = rawPredictions?.day_1 as Record<string, unknown> | undefined;
+                  const meanPrice = (day1?.mean ?? rawPredictions?.mean) as number | undefined;
+                  const ci95Low = (day1?.ci_95_low ?? (Array.isArray(rawPredictions?.ci_95) ? (rawPredictions.ci_95 as number[])[0] : undefined)) as number | undefined;
+                  const ci95High = (day1?.ci_95_high ?? (Array.isArray(rawPredictions?.ci_95) ? (rawPredictions.ci_95 as number[])[1] : undefined)) as number | undefined;
                   const scenarios = mc.scenarios as Record<string, Record<string, unknown>> | undefined;
                   const riskMetrics = mc.risk_metrics as Record<string, number> | undefined;
                   return (
                     <div className="glass-card p-4">
                       <h4 className="text-xs font-semibold text-accent-blue mb-2">🎲 Monte Carlo</h4>
                       <div className="text-lg font-bold">
-                        {predictions?.mean != null ? `₹${formatNumber(predictions.mean as number)}` : '—'}
+                        {meanPrice != null ? `₹${formatNumber(meanPrice)}` : '—'}
                       </div>
-                      {predictions?.ci_95 != null && Array.isArray(predictions.ci_95) && (
+                      {ci95Low != null && ci95High != null && (
                         <div className="text-xs text-gray-500 mt-1">
-                          CI 95%: ₹{formatNumber((predictions.ci_95 as number[])[0])} – ₹{formatNumber((predictions.ci_95 as number[])[1])}
+                          CI 95%: ₹{formatNumber(ci95Low)} – ₹{formatNumber(ci95High)}
                         </div>
                       )}
                       {scenarios && (
                         <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                          {scenarios.bull && <div className="text-accent-green">Bull: ₹{formatNumber((scenarios.bull?.avg_price as number) ?? 0)}</div>}
+                          {scenarios.bull && <div className="text-accent-green">Bull: ₹{formatNumber((scenarios.bull?.avg_price as number) ?? 0)} ({typeof scenarios.bull?.probability === 'number' ? `${scenarios.bull.probability.toFixed(0)}%` : ''})</div>}
                           {scenarios.base && <div className="text-accent-blue">Base: ₹{formatNumber((scenarios.base?.avg_price as number) ?? 0)}</div>}
-                          {scenarios.bear && <div className="text-accent-red">Bear: ₹{formatNumber((scenarios.bear?.avg_price as number) ?? 0)}</div>}
+                          {scenarios.bear && <div className="text-accent-red">Bear: ₹{formatNumber((scenarios.bear?.avg_price as number) ?? 0)} ({typeof scenarios.bear?.probability === 'number' ? `${scenarios.bear.probability.toFixed(0)}%` : ''})</div>}
                         </div>
                       )}
-                      {riskMetrics?.var_95 != null && (
+                      {riskMetrics?.var_95 != null && typeof riskMetrics.var_95 === 'number' && (
                         <div className="text-xs text-accent-red mt-1">VaR 95%: {riskMetrics.var_95.toFixed(1)}%</div>
                       )}
                     </div>
@@ -348,18 +358,21 @@ function StockDetailModal({ symbol, onClose }: { symbol: string; onClose: () => 
                   </div>
                   {/* Legs with greeks */}
                   <div className="mt-2 space-y-1">
-                    {((strat.legs as Array<Record<string, unknown>>) ?? []).map((leg, i) => (
-                      <div key={i} className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-[10px] px-2 py-0.5 rounded ${
-                          leg.action === 'BUY' ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'
-                        }`}>
-                          {leg.action as string} {leg.strike as number} {leg.type as string} @₹{formatNumber((leg.premium as number) ?? 0)}
-                        </span>
-                        <span className="text-[10px] text-gray-500">
-                          Δ{(leg.delta as number)?.toFixed(2)} Θ{(leg.theta as number)?.toFixed(2)} ν{(leg.vega as number)?.toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
+                    {((strat.legs as Array<Record<string, unknown>>) ?? []).map((leg, i) => {
+                      const greeks = (leg.greeks as Record<string, number>) ?? {};
+                      return (
+                        <div key={i} className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-[10px] px-2 py-0.5 rounded ${
+                            leg.action === 'BUY' ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'
+                          }`}>
+                            {leg.action as string} {leg.strike as number} {leg.type as string} @₹{formatNumber((leg.premium as number) ?? 0)}
+                          </span>
+                          <span className="text-[10px] text-gray-500">
+                            Δ{greeks.delta?.toFixed(2) ?? '—'} Θ{greeks.theta?.toFixed(2) ?? '—'} ν{greeks.vega?.toFixed(2) ?? '—'}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}

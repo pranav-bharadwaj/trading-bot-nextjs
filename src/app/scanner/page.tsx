@@ -388,8 +388,8 @@ function StockDetailModal({
   stock: StockRow;
   onClose: () => void;
 }) {
-  const { data: prediction, isLoading: predLoading } = useStockDetail(stock.symbol);
-  const { data: optionsRaw, isLoading: optLoading } = useOptions(stock.symbol);
+  const { data: prediction, isLoading: predLoading, error: predError } = useStockDetail(stock.symbol);
+  const { data: optionsRaw, isLoading: optLoading, error: optError } = useOptions(stock.symbol);
   const options = optionsRaw as unknown as OptionsData | undefined;
   const [activeTab, setActiveTab] = useState<'models' | 'options'>('models');
 
@@ -477,6 +477,11 @@ function StockDetailModal({
                       </div>
                     ))}
                   </div>
+                ) : predError ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    <p>⚠️ Failed to load prediction data</p>
+                    <p className="text-xs text-gray-600 mt-1">{predError?.message || 'Network error'}</p>
+                  </div>
                 ) : prediction ? (
                   <>
                     {/* Models Grid */}
@@ -487,10 +492,13 @@ function StockDetailModal({
                           ? ((prediction as Record<string, unknown>).models as Record<string, unknown>)?.monte_carlo as Record<string, unknown> | undefined
                           : (prediction as Record<string, unknown>).monte_carlo as Record<string, unknown> | undefined;
                         if (!mc) return null;
-                        const predictions = mc.predictions as Record<string, unknown> | undefined;
+                        const rawPredictions = mc.predictions as Record<string, unknown> | undefined;
+                        // API returns predictions.day_1.mean, not predictions.mean directly
+                        const day1 = rawPredictions?.day_1 as Record<string, unknown> | undefined;
+                        const meanPrice = (day1?.mean ?? rawPredictions?.mean) as number | undefined;
                         const scenarios = mc.scenarios as Record<string, Record<string, unknown>> | undefined;
                         const riskMetrics = mc.risk_metrics as Record<string, number> | undefined;
-                        const targetProbs = mc.target_probabilities as Record<string, number> | undefined;
+                        const targetProbs = mc.target_probabilities as Record<string, unknown> | undefined;
                         return (
                           <div className="glass-card p-4 space-y-3">
                             <h4 className="text-xs font-semibold text-accent-blue flex items-center gap-1.5">
@@ -499,7 +507,7 @@ function StockDetailModal({
                             <div>
                               <div className="text-[10px] text-gray-500 mb-0.5">Mean Price</div>
                               <div className="text-lg font-bold">
-                                {predictions?.mean != null ? `₹${formatNumber(predictions.mean as number)}` : '—'}
+                                {meanPrice != null ? `₹${formatNumber(meanPrice)}` : '—'}
                               </div>
                             </div>
                             {/* Scenarios */}
@@ -515,6 +523,9 @@ function StockDetailModal({
                                       <div className={`text-xs font-bold ${color}`}>
                                         ₹{formatNumber((sc.avg_price as number) ?? 0)}
                                       </div>
+                                      {typeof sc.probability === 'number' && (
+                                        <div className="text-[10px] text-gray-500">{(sc.probability as number).toFixed(0)}%</div>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -523,17 +534,17 @@ function StockDetailModal({
                             {/* Risk Metrics */}
                             {riskMetrics && (
                               <div className="text-[10px] text-gray-500 space-y-0.5">
-                                {riskMetrics.var_95 != null && <div>VaR 95%: {riskMetrics.var_95.toFixed(1)}%</div>}
-                                {riskMetrics.max_drawdown != null && (
+                                {typeof riskMetrics.var_95 === 'number' && <div>VaR 95%: {riskMetrics.var_95.toFixed(1)}%</div>}
+                                {typeof riskMetrics.max_drawdown === 'number' && (
                                   <div>Max Drawdown: {riskMetrics.max_drawdown.toFixed(1)}%</div>
                                 )}
                               </div>
                             )}
                             {/* Target Probabilities */}
-                            {targetProbs && (
+                            {targetProbs && typeof targetProbs === 'object' && (
                               <div className="flex flex-wrap gap-2 text-[10px]">
-                                {Object.entries(targetProbs).map(([k, v]) => (
-                                  <span key={k} className="text-accent-blue">{k}: {v.toFixed(1)}%</span>
+                                {Object.entries(targetProbs).filter(([, v]) => typeof v === 'number').map(([k, v]) => (
+                                  <span key={k} className="text-accent-blue">{k}: {(v as number).toFixed(1)}%</span>
                                 ))}
                               </div>
                             )}

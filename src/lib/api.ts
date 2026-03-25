@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://pranavbharadwaj.pythonanywhere.com';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://34.100.177.78:8080';
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
