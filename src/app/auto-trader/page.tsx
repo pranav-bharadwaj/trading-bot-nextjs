@@ -205,23 +205,24 @@ function Header() {
 function PortfolioSummary() {
   const { data, isLoading, error } = useBotStatus(10000);
 
-  if (isLoading) return (
+  if (isLoading && !data) return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} lines={2} />)}
     </div>
   );
-  if (error && !data) return (
+  if (!data) return (
     <div className="glass-card p-5 border border-accent-gold/20">
       <div className="flex items-center gap-3">
         <span className="text-accent-gold text-xl">⚠️</span>
         <div>
-          <p className="text-accent-gold font-medium">Market Closed — Offline Mode</p>
-          <p className="text-gray-500 text-xs mt-1">Data loads on page refresh. Live polling resumes 8:45 AM IST.</p>
+          <p className="text-accent-gold font-medium">Connecting to bot...</p>
+          <p className="text-gray-500 text-xs mt-1">
+            {error ? 'Cannot reach backend. Check your connection.' : 'Loading data...'}
+          </p>
         </div>
       </div>
     </div>
   );
-  if (!data) return <div className="glass-card p-5 text-gray-400">Loading bot data...</div>;
 
   const p = data.portfolio as Record<string, number>;
   const s = data.stats as Record<string, number>;
