@@ -7,6 +7,7 @@ import {
   useIndexData,
   useOrderFlow,
   useLivePrice,
+  isMarketWindow,
 } from '@/hooks/useMarketData';
 import { formatNumber, formatPercent, formatCurrency, getSignalColor } from '@/lib/utils';
 import SkeletonCard, { SkeletonChart } from '@/components/SkeletonLoader';
@@ -119,10 +120,14 @@ function StatusBar({
       </div>
       <div className="flex items-center gap-4 text-gray-500">
         <span>📡 {dataSource || 'Yahoo Finance'}</span>
-        <span>
-          Refresh in{' '}
-          <span className="text-accent-blue font-mono font-semibold">{countdown}s</span>
-        </span>
+        {isMarketWindow() ? (
+          <span>
+            Refresh in{' '}
+            <span className="text-accent-blue font-mono font-semibold">{countdown}s</span>
+          </span>
+        ) : (
+          <span className="text-accent-gold">Market closed — no polling</span>
+        )}
         <span className="text-accent-gold font-mono font-semibold tracking-wider">
           {clock} IST
         </span>
